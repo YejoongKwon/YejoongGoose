@@ -5,4 +5,4 @@
 source venv/bin/activate
 
 # 테스트 실행
-python3 tests/test_fetch_market_data.py "$@"
+python3 tests/test_all_nodes.py "$@"
