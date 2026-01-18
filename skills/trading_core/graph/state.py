@@ -42,7 +42,6 @@ class TradingState(TypedDict):
     # ========== 전략 파라미터 ==========
     k_value: float  # 변동성 계수 (기본값: 0.5)
     target_price: float  # 목표가 (돌파 기준)
-
     stop_loss_pct: float  # 손절매 비율 (예: -0.03)
     take_profit_pct: float  # 익절 비율 (예: 0.05)
     trailing_stop: bool  # 트레일링 스탑 사용 여부
@@ -50,12 +49,10 @@ class TradingState(TypedDict):
 
     # ========== 포지션 정보 ==========
     position_status: Literal["IDLE", "IN_POSITION"]  # 포지션 상태
-
     entry_price: Optional[float]  # 진입가
     entry_time: Optional[str]  # 진입 시각
     position_qty: int  # 보유 수량
-
-    highest_price: Optional[float]  # 진입 후 최고가 (트레일링 스탑용)
+    highest_price: Optional[float]  # 진입 후 최고가 (트레일링 스탑)
     lowest_price: Optional[float]  # 진입 후 최저가
 
     # ========== 손익 정보 ==========
@@ -76,18 +73,19 @@ class TradingState(TypedDict):
     cash_balance: float  # 주문 가능 현금
     total_asset: float  # 총 자산 (현금 + 주식)
     initial_capital: float  # 초기 자본
+    peak_asset: float  # 최고 자산 (MDD 계산용)
 
     # ========== 리스크 관리 ==========
     max_daily_loss: float  # 일일 최대 손실 한도 (예: -0.05)
+    max_monthly_loss: float  # 월간 최대 손실 한도 (예: -0.15)
+    max_drawdown: float  # 최대 허용 드로우다운 (예: -0.20)
     max_position_size: float  # 최대 포지션 크기 비율 (예: 0.1)
-
     trading_stopped: bool  # 거래 중단 플래그
     stop_reason: Optional[str]  # 중단 사유
 
     # ========== 매매 신호 ==========
     should_buy: bool  # 매수 신호
     should_sell: bool  # 매도 신호
-
     buy_reason: Optional[str]  # 매수 사유
     sell_reason: Optional[str]  # 매도 사유
 
@@ -137,6 +135,8 @@ def create_initial_state(
     env_mode: Optional[str] = None,
     max_position_size: Optional[float] = None,
     max_daily_loss: Optional[float] = None,
+    max_monthly_loss: Optional[float] = None,
+    max_drawdown: Optional[float] = None,
     trailing_stop: Optional[bool] = None,
     trailing_stop_pct: Optional[float] = None
 ) -> TradingState:
@@ -155,6 +155,8 @@ def create_initial_state(
         env_mode: 실행 모드 (None이면 YAML에서 로드)
         max_position_size: 최대 포지션 크기 (None이면 YAML에서 로드)
         max_daily_loss: 일일 최대 손실 (None이면 YAML에서 로드)
+        max_monthly_loss: 월간 최대 손실 (None이면 YAML에서 로드)
+        max_drawdown: 최대 낙폭 한도 (None이면 YAML에서 로드)
         trailing_stop: 트레일링 스탑 사용 여부 (None이면 YAML에서 로드)
         trailing_stop_pct: 트레일링 스탑 비율 (None이면 YAML에서 로드)
 
@@ -172,8 +174,10 @@ def create_initial_state(
     final_env_mode = env_mode if env_mode is not None else config.get('env', {}).get('mode', 'demo')
     final_max_position_size = max_position_size if max_position_size is not None else config.get('trading', {}).get('position_size', 0.1)
     final_max_daily_loss = max_daily_loss if max_daily_loss is not None else config.get('risk', {}).get('max_daily_loss', -0.05)
+    final_max_monthly_loss = max_monthly_loss if max_monthly_loss is not None else config.get('risk', {}).get('max_monthly_loss', -0.15)
     final_trailing_stop = trailing_stop if trailing_stop is not None else config.get('risk', {}).get('trailing_stop', False)
-    final_trailing_stop_pct = trailing_stop_pct if trailing_stop_pct is not None else config.get('risk', {}).get('trailing_stop_ratio', 0.02)
+    final_trailing_stop_pct = trailing_stop_pct if trailing_stop_pct is not None else config.get('risk', {}).get('trailing_stop_pct', 0.02)
+    final_max_drawdown = max_drawdown if max_drawdown is not None else config.get('risk', {}).get('max_drawdown', -0.20)
 
     return TradingState(
         # 메타
@@ -215,7 +219,7 @@ def create_initial_state(
         unrealized_pnl_pct=0.0,
         realized_pnl=0.0,
         realized_pnl_pct=0.0,
-        daily_pnl=0.0,
+        daily_pnl=0.0, # 매도 주문 시 갱신됨
         daily_pnl_pct=0.0,
         total_trades=0,
         winning_trades=0,
@@ -225,9 +229,12 @@ def create_initial_state(
         cash_balance=final_initial_capital,
         total_asset=final_initial_capital,
         initial_capital=final_initial_capital,
+        peak_asset=final_initial_capital,
 
         # 리스크
         max_daily_loss=final_max_daily_loss,
+        max_monthly_loss=final_max_monthly_loss,
+        max_drawdown=final_max_drawdown,
         max_position_size=final_max_position_size,
         trading_stopped=False,
         stop_reason=None,

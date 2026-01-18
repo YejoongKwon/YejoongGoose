@@ -59,7 +59,8 @@ class BreakoutStrategy:
         self,
         current_price: float,
         target_price: float,
-        current_time: Optional[datetime] = None
+        current_time: Optional[datetime] = None,
+        skip_time_check: bool = False
     ) -> Tuple[bool, Optional[str]]:
         """
         진입 조건 확인
@@ -68,6 +69,7 @@ class BreakoutStrategy:
             current_price: 현재가
             target_price: 목표가
             current_time: 현재 시각 (None이면 현재 시각 사용)
+            skip_time_check: 시간 체크 스킵 여부 (테스트용)
 
         Returns:
             (진입 여부, 사유)
@@ -77,9 +79,10 @@ class BreakoutStrategy:
 
         current_time_only = current_time.time()
 
-        # 시간 체크
-        if not (self.entry_time_start <= current_time_only <= self.entry_time_end):
-            return False, "진입 시간이 아님"
+        # 시간 체크 (skip_time_check=True면 스킵)
+        if not skip_time_check:
+            if not (self.entry_time_start <= current_time_only <= self.entry_time_end):
+                return False, "진입 시간이 아님"
 
         # 목표가 돌파 확인
         if current_price >= target_price:

@@ -19,8 +19,10 @@ risk:
   stop_loss: -0.03  # 손절매 (-3%)
   take_profit: 0.05  # 익절 (+5%)
   max_daily_loss: -0.05  # 일일 최대 손실 (-5%)
+  max_monthly_loss: -0.15  # 월간 최대 손실 (-15%)
   trailing_stop: false  # 트레일링 스탑 사용 여부
-  trailing_stop_ratio: 0.02  # 트레일링 스탑 비율 (2%)
+  trailing_stop_pct: 0.02  # 트레일링 스탑 비율 (2%)
+  max_drawdown: -0.20  # 최대 낙폭 제한 (-20%)
 
 # 환경 설정
 env:
