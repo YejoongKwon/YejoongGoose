@@ -108,13 +108,17 @@ def _call_inquire_daily_chart(env_mode: str, symbol: str, days: int = 2) -> list
     """
     일봉 차트 조회 API 호출
 
+    KIS API는 영업일 기준으로 일봉 데이터를 반환합니다.
+    주말(토/일) 및 공휴일은 자동으로 제외되며, 실제 거래가 있었던 영업일만 포함됩니다.
+    예: 월요일에 조회 시 [월요일, 금요일, 목요일, ...] 순으로 반환
+
     Args:
         env_mode: 실행 모드
         symbol: 종목 코드
-        days: 조회 일수
+        days: 조회할 영업일 수
 
     Returns:
-        일봉 데이터 리스트
+        일봉 데이터 리스트 (최신순, [0]=당일 또는 최근일, [1]=전일 영업일)
     """
     try:
         from datetime import datetime, timedelta
@@ -219,10 +223,10 @@ def _call_order_cash(
     symbol: str,
     qty: int,
     price: int = 0,
-    order_dvsn: str = "01"  # 00:지정가, 01:시장가
+    order_dvsn: str = "00"  # 00:지정가, 01:시장가
 ) -> Dict[str, Any]:
     """
-    현금 주문 API 호출
+    현금 주문 API 호출 (Rate Limit 재시도 로직 포함)
 
     Args:
         env_mode: 실행 모드
@@ -235,59 +239,108 @@ def _call_order_cash(
     Returns:
         주문 결과
     """
-    try:
-        # TR ID 설정
-        if env_mode == "demo":
-            if order_type == "buy":
-                tr_id = "VTTC0012U"
-            else:
-                tr_id = "VTTC0011U"
+    import time
+
+    max_retries = 3
+
+    # TR ID 설정
+    if env_mode == "demo":
+        if order_type == "buy":
+            tr_id = "VTTC0012U"
         else:
-            if order_type == "buy":
-                tr_id = "TTTC0012U"
-            else:
-                tr_id = "TTTC0011U"
-
-        # API 호출
-        params = {
-            "CANO": ka._TRENV.my_acct,  # 계좌번호 앞 8자리
-            "ACNT_PRDT_CD": ka._TRENV.my_prod,  # 계좌번호 뒤 2자리
-            "PDNO": symbol,  # 종목코드
-            "ORD_DVSN": order_dvsn,  # 주문구분
-            "ORD_QTY": str(qty),  # 주문수량 (문자열)
-            "ORD_UNPR": str(price),  # 주문단가 (문자열)
-            "EXCG_ID_DVSN_CD": "KRX",  # 거래소ID
-            "SLL_TYPE": "01" if order_type == "sell" else "",  # 매도유형
-            "CNDT_PRIC": ""  # 조건가격
-        }
-
-        api_url = "/uapi/domestic-stock/v1/trading/order-cash"
-        res = ka._url_fetch(api_url, tr_id, "", params, postFlag=True)
-
-        if res.isOK():
-            output = res.getBody().output
-            return {
-                'success': True,
-                'order_no': output.get('KRX_FWDG_ORD_ORGNO', '') + output.get('ODNO', ''),  # 주문번호
-                'order_time': output.get('ORD_TMD', ''),  # 주문시각
-                'message': f"{order_type.upper()} 주문 접수 완료"
-            }
+            tr_id = "VTTC0011U"
+    else:
+        if order_type == "buy":
+            tr_id = "TTTC0012U"
         else:
-            error_msg = f"{order_type.upper()} 주문 실패"
-            res.printError(url=api_url)
-            return {
-                'success': False,
-                'order_no': '',
-                'message': error_msg
-            }
+            tr_id = "TTTC0011U"
 
-    except Exception as e:
-        logger.error(f"주문 API 호출 실패: {e}")
-        return {
-            'success': False,
-            'order_no': '',
-            'message': f"주문 API 호출 오류: {str(e)}"
-        }
+    # API 호출 파라미터
+    params = {
+        "CANO": ka._TRENV.my_acct,
+        "ACNT_PRDT_CD": ka._TRENV.my_prod,
+        "PDNO": symbol,
+        "ORD_DVSN": order_dvsn,
+        "ORD_QTY": str(qty),
+        "ORD_UNPR": str(price),
+        "EXCG_ID_DVSN_CD": "KRX",
+        "SLL_TYPE": "01" if order_type == "sell" else "",
+        "CNDT_PRIC": ""
+    }
+
+    api_url = "/uapi/domestic-stock/v1/trading/order-cash"
+
+    # 재시도 로직 (Rate Limit 대응)
+    for attempt in range(max_retries):
+        try:
+            res = ka._url_fetch(api_url, tr_id, "", params, postFlag=True)
+
+            if res.isOK():
+                output = res.getBody().output
+                if attempt > 0:
+                    logger.info(f"[_call_order_cash] 재시도 {attempt}회 후 주문 성공")
+                return {
+                    'success': True,
+                    'order_no': output.get('KRX_FWDG_ORD_ORGNO', '') + output.get('ODNO', ''),
+                    'order_time': output.get('ORD_TMD', ''),
+                    'message': f"{order_type.upper()} 주문 접수 완료"
+                }
+            else:
+                # 에러 메시지 추출
+                try:
+                    error_body = res.getBody()
+                    msg_cd = getattr(error_body, 'msg_cd', '')
+                    msg1 = getattr(error_body, 'msg1', '')
+                except:
+                    msg_cd = ''
+                    msg1 = ''
+
+                # Rate Limit 에러 체크 (EGW00201)
+                is_rate_limit = (msg_cd == 'EGW00201' or '초당 거래건수' in msg1)
+
+                if is_rate_limit and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1초, 2초, 4초
+                    logger.warning(
+                        f"[_call_order_cash] Rate Limit 감지 ({msg_cd}). "
+                        f"{wait_time}초 대기 후 재시도 ({attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Rate Limit이 아니거나 최대 재시도 횟수 도달
+                    error_msg = f"{order_type.upper()} 주문 실패"
+                    if is_rate_limit:
+                        error_msg += f": Rate Limit 초과 ({max_retries}회 재시도 실패)"
+                    res.printError(url=api_url)
+                    return {
+                        'success': False,
+                        'order_no': '',
+                        'message': error_msg
+                    }
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                logger.warning(
+                    f"[_call_order_cash] API 호출 오류: {e}. "
+                    f"{wait_time}초 대기 후 재시도 ({attempt + 1}/{max_retries})..."
+                )
+                time.sleep(wait_time)
+                continue
+            else:
+                logger.error(f"주문 API 호출 실패: {e}")
+                return {
+                    'success': False,
+                    'order_no': '',
+                    'message': f"주문 API 호출 오류: {str(e)}"
+                }
+
+    # 모든 재시도 실패
+    return {
+        'success': False,
+        'order_no': '',
+        'message': f"{order_type.upper()} 주문 실패: 최대 재시도 횟수 초과"
+    }
 
 
 def fetch_market_data_node(state: TradingState) -> Dict[str, Any]:
@@ -337,15 +390,28 @@ def fetch_market_data_node(state: TradingState) -> Dict[str, Any]:
         price_data = _call_inquire_price(state["env_mode"], state["symbol"])
         logger.info(f"[fetch_market_data] 현재가 조회 완료: {price_data['current_price']:,.0f}원")
 
-        # 2. 일봉 차트 조회 (전일 데이터 포함)
-        chart_data = _call_inquire_daily_chart(state["env_mode"], state["symbol"], days=2)
+        # 2. 일봉 차트 조회 (전일 데이터 포함, 영업일 고려하여 여유있게 조회)
+        chart_data = _call_inquire_daily_chart(state["env_mode"], state["symbol"], days=5)
         logger.info(f"[fetch_market_data] 일봉 조회 완료: {len(chart_data)}일")
 
-        # 전일 데이터 추출 (chart_data[1]이 전일)
+        # 전일 영업일 데이터 추출
+        # chart_data[0]은 오늘(당일), chart_data[1]은 전일 영업일
+        # 주말/공휴일은 API가 자동으로 제외하고 영업일만 반환
         if len(chart_data) >= 2:
             yesterday = chart_data[1]
+            logger.info(
+                f"[fetch_market_data] 전일 영업일 데이터: "
+                f"날짜={yesterday['date']}, "
+                f"고가={yesterday['high']:,.0f}원, "
+                f"저가={yesterday['low']:,.0f}원"
+            )
         elif len(chart_data) >= 1:
+            # 데이터가 1개만 있는 경우 (당일만 있음)
             yesterday = chart_data[0]
+            logger.warning(
+                f"[fetch_market_data] 전일 데이터 없음. 당일 데이터 사용: "
+                f"날짜={yesterday['date']}"
+            )
         else:
             raise Exception("일봉 데이터 부족")
 
@@ -580,15 +646,23 @@ def execute_order_node(state: TradingState) -> Dict[str, Any]:
                 logger.warning("[execute_order] 주문 수량이 0 이하입니다")
                 return updates
 
-            logger.info(f"[execute_order] 매수 주문 실행: {state['symbol']}, {order_qty}주")
+            # 지정가 계산: 현재가 기준
+            # 상승장에서 체결 확률을 높이기 위해 현재가보다 약간 높게 설정
+            current_price = state["current_price"]
+            limit_price = int(current_price * 1.002)  # 현재가 + 0.2%
+
+            logger.info(
+                f"[execute_order] 매수 주문 실행: {state['symbol']}, "
+                f"{order_qty}주, 지정가={limit_price:,.0f}원 (현재가={current_price:,.0f}원)"
+            )
 
             result = _call_order_cash(
                 env_mode=state["env_mode"],
                 order_type="buy",
                 symbol=state["symbol"],
                 qty=order_qty,
-                price=0,  # 시장가
-                order_dvsn="01"  # 시장가
+                price=limit_price,
+                order_dvsn="00"  # 지정가
             )
 
             if result["success"]:
@@ -612,15 +686,23 @@ def execute_order_node(state: TradingState) -> Dict[str, Any]:
 
         # 매도 주문
         elif state["should_sell"]:
-            logger.info(f"[execute_order] 매도 주문 실행: {state['symbol']}, {state['position_qty']}주")
+            # 지정가 계산: 현재가 기준
+            # 하락장에서 체결 확률을 높이기 위해 현재가보다 약간 낮게 설정
+            current_price = state["current_price"]
+            limit_price = int(current_price * 0.998)  # 현재가 - 0.2%
+
+            logger.info(
+                f"[execute_order] 매도 주문 실행: {state['symbol']}, "
+                f"{state['position_qty']}주, 지정가={limit_price:,.0f}원 (현재가={current_price:,.0f}원)"
+            )
 
             result = _call_order_cash(
                 env_mode=state["env_mode"],
                 order_type="sell",
                 symbol=state["symbol"],
                 qty=state["position_qty"],
-                price=0,  # 시장가
-                order_dvsn="01"  # 시장가
+                price=limit_price,
+                order_dvsn="00"  # 지정가
             )
 
             if result["success"]:
