@@ -1,0 +1,101 @@
+# 변동성 돌파 전략 설정
+
+strategy:
+  name: "변동성 돌파 전략"
+  version: "1.0.0"
+
+  # 변동성 계수
+  k_value: 0.5  # 0.3 ~ 0.6 권장
+
+  # 손절/익절
+  stop_loss_pct: -0.03  # -3%
+  take_profit_pct: 0.05  # +5%
+
+  # 트레일링 스탑
+  trailing_stop: false
+  trailing_stop_pct: 0.02  # 2%
+
+  # 거래 시간
+  entry_time_start: "09:05"
+  entry_time_end: "15:00"
+  exit_time: "15:20"
+
+  # 포지션 크기
+  position_ratio: 0.1  # 10% 투자
+  max_position_size: 0.15  # 최대 15%
+
+  # 최소 거래량
+  min_volume: 100000  # 10만주
+
+  # 돌파 강도 최소값
+  min_breakout_strength: 0.01  # 1%
+
+risk:
+  # 일일 손실 한도
+  max_daily_loss: -0.05  # -5%
+
+  # 월간 손실 한도
+  max_monthly_loss: -0.15  # -15%
+
+  # 최대 낙폭 (MDD)
+  max_drawdown: -0.20  # -20%
+
+  # 변동성 조정
+  volatility_adjustment: true
+
+capital:
+  # 초기 자본
+  initial_capital: 10000000  # 1000만원
+
+  # 현금 보유 비율
+  min_cash_ratio: 0.2  # 20%
+
+  # 최소 주문 금액
+  min_order_amount: 10000  # 1만원
+
+symbols:
+  # 거래 종목 (ETF 위주)
+  - code: "069500"
+    name: "KODEX 200"
+    enabled: true
+    max_position_size: 0.15
+
+  - code: "102110"
+    name: "TIGER 200"
+    enabled: false
+    max_position_size: 0.15
+
+  - code: "251340"
+    name: "KODEX 코스닥150선물인버스"
+    enabled: false
+    max_position_size: 0.1
+
+monitoring:
+  # 모니터링 간격 (초)
+  check_interval: 60  # 1분
+
+  # 로그 레벨
+  log_level: "INFO"
+
+  # 성과 리포트 생성
+  daily_report: true
+  weekly_report: true
+  monthly_report: true
+
+  # 알림 설정
+  notifications:
+    enable: false
+    on_trade: true
+    on_stop_loss: true
+    on_daily_limit: true
+
+backtest:
+  # 백테스팅 설정
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+
+  # 수수료
+  commission: 0.00015  # 0.015%
+
+  # 슬리피지
+  slippage: 0.001  # 0.1%

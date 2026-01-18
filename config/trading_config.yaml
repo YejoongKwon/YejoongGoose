@@ -1,0 +1,52 @@
+# 변동성 돌파 자동매매 봇 설정 파일
+
+# 거래 설정
+trading:
+  capital: 10000000  # 운용 자본 (원)
+  position_size: 0.1  # 종목당 투자 비율 (10%)
+  max_positions: 3  # 최대 동시 보유 종목 수
+  min_order_amount: 10000  # 최소 주문 금액 (원)
+
+# 변동성 돌파 전략 설정
+volatility_breakout:
+  k_value: 0.5  # 변동성 계수 (0.3 ~ 0.6 권장)
+  entry_time: "09:05"  # 진입 가능 시작 시간 (장 시작 후 5분)
+  exit_time: "15:20"  # 청산 시간 (장 마감 10분 전)
+  use_market_order: true  # 시장가 주문 사용 여부
+
+# 리스크 관리
+risk:
+  stop_loss: -0.03  # 손절매 (-3%)
+  take_profit: 0.05  # 익절 (+5%)
+  max_daily_loss: -0.05  # 일일 최대 손실 (-5%)
+  trailing_stop: false  # 트레일링 스탑 사용 여부
+  trailing_stop_ratio: 0.02  # 트레일링 스탑 비율 (2%)
+
+# 환경 설정
+env:
+  mode: "demo"  # demo: 모의투자, real: 실전투자
+
+# API 호출 제한
+api:
+  rate_limit: 20  # 초당 최대 호출 횟수
+  retry_count: 3  # 실패 시 재시도 횟수
+  retry_delay: 1  # 재시도 대기 시간 (초)
+
+# 모니터링
+monitoring:
+  enable_logging: true
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  enable_slack_notification: false  # Slack 알림 사용 여부
+  slack_webhook_url: ""  # Slack Webhook URL
+
+# 백테스팅
+backtest:
+  initial_capital: 10000000
+  commission: 0.00015  # 수수료율 (0.015%)
+  slippage: 0.001  # 슬리피지 (0.1%) - 주문 넣은 가격과 실제 체결 가격의 차이
+
+# Claude AI 설정
+claude:
+  use_ai_decision: false  # AI 의사결정 지원 사용 여부
+  decision_threshold: 0.7  # AI 추천 신뢰도 임계값
+  auto_execute: false  # AI 추천 자동 실행 여부

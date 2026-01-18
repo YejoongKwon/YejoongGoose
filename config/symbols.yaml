@@ -1,0 +1,75 @@
+# 거래 종목 목록
+
+symbols:
+  # 대형주 (시가총액 상위)
+  - code: "005930"
+    name: "삼성전자"
+    enabled: true
+    max_position_size: 0.15  # 최대 투자 비율
+    notes: "반도체 대장주"
+
+  - code: "000660"
+    name: "SK하이닉스"
+    enabled: true
+    max_position_size: 0.1
+    notes: "메모리 반도체"
+
+  - code: "035420"
+    name: "NAVER"
+    enabled: false
+    max_position_size: 0.1
+    notes: "IT 플랫폼"
+
+  - code: "035720"
+    name: "카카오"
+    enabled: false
+    max_position_size: 0.1
+    notes: "IT 플랫폼"
+
+  # 중형주
+  - code: "096770"
+    name: "SK이노베이션"
+    enabled: false
+    max_position_size: 0.08
+    notes: "배터리/에너지"
+
+  - code: "207940"
+    name: "삼성바이오로직스"
+    enabled: false
+    max_position_size: 0.08
+    notes: "바이오"
+
+  - code: "068270"
+    name: "셀트리온"
+    enabled: false
+    max_position_size: 0.08
+    notes: "바이오시밀러"
+
+  # ETF
+  - code: "069500"
+    name: "KODEX 200"
+    enabled: false
+    max_position_size: 0.15
+    notes: "코스피200 추종"
+
+  - code: "102110"
+    name: "TIGER 200"
+    enabled: false
+    max_position_size: 0.15
+    notes: "코스피200 추종"
+
+# 제외 종목 (거래 중단)
+excluded:
+  - code: "999999"
+    name: "테스트종목"
+    reason: "테스트용"
+    excluded_date: "2024-01-01"
+
+# 종목 선정 기준
+selection_criteria:
+  min_market_cap: 1000000000000  # 최소 시가총액 (1조)
+  min_daily_volume: 1000000  # 최소 일일 거래량 (100만주)
+  min_price: 10000  # 최소 주가 (10,000원)
+  max_price: 1000000  # 최대 주가 (1,000,000원)
+  exclude_suspended: true  # 거래정지 종목 제외
+  exclude_warning: true  # 경고/투자주의 종목 제외
