@@ -429,7 +429,8 @@ def generate_signal_node(state: TradingState) -> Dict[str, Any]:
     if state["position_status"] == "IDLE":
         should_enter, reason = breakout_strategy.should_enter(
             current_price=state["current_price"],
-            target_price=state["target_price"]
+            target_price=state["target_price"],
+            skip_time_check=state.get("debug_mode", False)
         )
 
         if should_enter:
@@ -465,39 +466,69 @@ def generate_signal_node(state: TradingState) -> Dict[str, Any]:
 def risk_check_node(state: TradingState) -> Dict[str, Any]:
     """
     리스크 체크 노드
-
-    일일 손실 한도, 포지션 크기 등을 확인합니다.
+    
+    일일/월간 손실 한도, 포지션 크기, MDD 등을 종합적으로 확인합니다.
     """
     logger.info("[risk_check] 리스크 체크 시작")
-
+    
     updates: Dict[str, Any] = {}
-
-    # 일일 손실 한도 체크
-    if risk_rules.check_daily_loss_limit(
+    
+    # 1. 종합 거래 조건 검증 (일일/월간 손실 한도)
+    can_trade, trade_reason = risk_rules.validate_trading_conditions(
         daily_pnl=state["daily_pnl"],
+        monthly_pnl=state.get("monthly_pnl", 0.0),
         initial_capital=state["initial_capital"],
-        max_daily_loss=state["max_daily_loss"]
-    ):
-        logger.warning("[risk_check] 일일 손실 한도 초과!")
+        max_daily_loss=state["max_daily_loss"],
+        max_monthly_loss=state.get("max_monthly_loss", -0.15)
+    )
+    
+    if not can_trade:
+        logger.warning(f"[risk_check] 거래 조건 불만족: {trade_reason}")
         updates["trading_stopped"] = True
-        updates["stop_reason"] = "일일 손실 한도 초과"
-        updates["should_buy"] = False  # 매수 신호 취소
-
-    # 포지션 크기 체크
+        updates["stop_reason"] = trade_reason
+        updates["should_buy"] = False
+        updates["should_sell"] = False
+        return updates
+    
+    # 2. MDD(최대 낙폭) 체크
+    current_asset = state.get("total_asset", state["initial_capital"])
+    peak_asset = state.get("peak_asset", state["initial_capital"])
+    
+    if risk_rules.check_max_drawdown(
+        current_asset=current_asset,
+        peak_asset=peak_asset,
+        max_drawdown=state.get("max_drawdown", -0.20)
+    ):
+        logger.warning("[risk_check] 최대 낙폭(MDD) 초과!")
+        updates["trading_stopped"] = True
+        updates["stop_reason"] = "최대 낙폭(MDD) 초과"
+        updates["should_buy"] = False
+        updates["should_sell"] = False
+        return updates
+    
+    # 3. 매수 시 포지션 크기 체크
     if state.get("should_buy", False):
         order_qty = state.get("order_qty", 0)
         position_value = state["current_price"] * order_qty
+        
         is_valid, reason = risk_rules.check_position_size(
             position_value=position_value,
-            total_asset=state["total_asset"],
-            max_position_size=state["max_position_size"]
+            total_asset=current_asset,
+            max_position_size=state.get("max_position_size", 0.15)
         )
-
+        
         if not is_valid:
             logger.warning(f"[risk_check] 포지션 크기 초과: {reason}")
             updates["should_buy"] = False
             updates["buy_reason"] = None
-
+            updates["risk_check_failed"] = True
+            updates["risk_check_reason"] = reason
+    
+    # 4. 리스크 체크 통과
+    if not updates:
+        logger.info("[risk_check] 모든 리스크 체크 통과")
+        updates["risk_check_passed"] = True
+    
     return updates
 
 
@@ -668,7 +699,7 @@ def update_account_node(state: TradingState) -> Dict[str, Any]:
     """
     계좌 정보 업데이트 노드
 
-    현금 잔고 및 총 자산을 업데이트합니다.
+    현금 잔고, 총 자산 및 최고 자산(peak_asset, MDD계산용)을 업데이트합니다.
 
     Raises:
         RuntimeError: KIS API를 사용할 수 없거나 인증 실패 시
@@ -707,10 +738,43 @@ def update_account_node(state: TradingState) -> Dict[str, Any]:
             total_eval = float(output2[0].get('tot_evlu_amt', 0))  # 총평가금액
             logger.info(f"[update_account] API 잔고 조회 완료: 총평가금액 {total_eval:,.0f}원")
 
-            return {
+            # 기본 업데이트 정보
+            updates = {
                 "total_asset": total_eval,
                 "daily_pnl_pct": (total_eval - state["initial_capital"]) / state["initial_capital"]
             }
+
+            # Peak Asset 갱신 로직
+            current_peak = state.get("peak_asset", state["initial_capital"])
+
+            if total_eval > current_peak:
+                updates["peak_asset"] = total_eval
+                gain_amount = total_eval - current_peak
+                gain_pct = (gain_amount / current_peak) * 100
+
+                logger.info(
+                    f"[update_account] !신규 최고 자산 경신! "
+                    f"{current_peak:,.0f}원 → {total_eval:,.0f}원 "
+                    f"(+{gain_amount:,.0f}원, +{gain_pct:.2f}%)"
+                )
+            else:
+                # MDD 계산 및 로깅 (디버깅/모니터링용)
+                current_mdd = (total_eval - current_peak) / current_peak
+                drawdown_amount = total_eval - current_peak
+                
+                if current_mdd < -0.05:  # -5% 이상 하락 시 경고
+                    logger.warning(
+                        f"[update_account] ⚠️ 낙폭 발생: {current_mdd*100:.2f}% "
+                        f"(최고: {current_peak:,.0f}원, 현재: {total_eval:,.0f}원, "
+                        f"차이: {drawdown_amount:,.0f}원)"
+                    )
+                else:
+                    logger.debug(
+                        f"[update_account] 현재 MDD: {current_mdd*100:.2f}% "
+                        f"(최고: {current_peak:,.0f}원, 현재: {total_eval:,.0f}원)"
+                    )
+
+            return updates
         else:
             raise Exception("잔고 데이터 없음")
 
