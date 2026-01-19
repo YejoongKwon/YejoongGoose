@@ -30,6 +30,9 @@ strategy:
   # 돌파 강도 최소값
   min_breakout_strength: 0.01  # 1%
 
+  # 슬리피지 (실전 거래용)
+  slippage: 0.002  # 0.2% (매수 +0.2%, 매도 -0.2%)
+
 risk:
   # 일일 손실 한도
   max_daily_loss: -0.05  # -5%

@@ -18,6 +18,10 @@ from .state import TradingState
 from ..strategies.breakout_etf import BreakoutStrategy
 from ..strategies.risk_rules import RiskRules
 
+# 호가 단위 설정 import
+sys.path.insert(0, str(project_root / "config"))
+from tick_size import adjust_price_to_tick
+
 # KIS API import
 try:
     from lib.kis import kis_auth as ka
@@ -646,14 +650,20 @@ def execute_order_node(state: TradingState) -> Dict[str, Any]:
                 logger.warning("[execute_order] 주문 수량이 0 이하입니다")
                 return updates
 
-            # 지정가 계산: 현재가 기준
-            # 상승장에서 체결 확률을 높이기 위해 현재가보다 약간 높게 설정
+            # 지정가 계산: 현재가 + 슬리피지
+            # 체결 확률을 높이기 위해 현재가보다 약간 높게 설정
             current_price = state["current_price"]
-            limit_price = int(current_price * 1.002)  # 현재가 + 0.2%
+            slippage = state.get("slippage", 0.002)  # 기본값 0.2%
+            raw_limit_price = current_price * (1 + slippage)
+
+            # 호가 단위에 맞게 조정
+            limit_price = adjust_price_to_tick(raw_limit_price)
 
             logger.info(
                 f"[execute_order] 매수 주문 실행: {state['symbol']}, "
-                f"{order_qty}주, 지정가={limit_price:,.0f}원 (현재가={current_price:,.0f}원)"
+                f"{order_qty}주, 지정가={limit_price:,.0f}원 "
+                f"(현재가={current_price:,.0f}원, 슬리피지={slippage*100:.2f}%, "
+                f"원래가격={raw_limit_price:,.0f}원)"
             )
 
             result = _call_order_cash(
@@ -686,14 +696,20 @@ def execute_order_node(state: TradingState) -> Dict[str, Any]:
 
         # 매도 주문
         elif state["should_sell"]:
-            # 지정가 계산: 현재가 기준
-            # 하락장에서 체결 확률을 높이기 위해 현재가보다 약간 낮게 설정
+            # 지정가 계산: 현재가 - 슬리피지
+            # 체결 확률을 높이기 위해 현재가보다 약간 낮게 설정
             current_price = state["current_price"]
-            limit_price = int(current_price * 0.998)  # 현재가 - 0.2%
+            slippage = state.get("slippage", 0.002)  # 기본값 0.2%
+            raw_limit_price = current_price * (1 - slippage)
+
+            # 호가 단위에 맞게 조정
+            limit_price = adjust_price_to_tick(raw_limit_price)
 
             logger.info(
                 f"[execute_order] 매도 주문 실행: {state['symbol']}, "
-                f"{state['position_qty']}주, 지정가={limit_price:,.0f}원 (현재가={current_price:,.0f}원)"
+                f"{state['position_qty']}주, 지정가={limit_price:,.0f}원 "
+                f"(현재가={current_price:,.0f}원, 슬리피지={slippage*100:.2f}%, "
+                f"원래가격={raw_limit_price:,.0f}원)"
             )
 
             result = _call_order_cash(

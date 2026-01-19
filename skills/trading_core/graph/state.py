@@ -46,6 +46,7 @@ class TradingState(TypedDict):
     take_profit_pct: float  # 익절 비율 (예: 0.05)
     trailing_stop: bool  # 트레일링 스탑 사용 여부
     trailing_stop_pct: float  # 트레일링 스탑 비율
+    slippage: float  # 슬리피지 (예: 0.002 = 0.2%)
 
     # ========== 포지션 정보 ==========
     position_status: Literal["IDLE", "IN_POSITION"]  # 포지션 상태
@@ -138,7 +139,8 @@ def create_initial_state(
     max_monthly_loss: Optional[float] = None,
     max_drawdown: Optional[float] = None,
     trailing_stop: Optional[bool] = None,
-    trailing_stop_pct: Optional[float] = None
+    trailing_stop_pct: Optional[float] = None,
+    slippage: Optional[float] = None
 ) -> TradingState:
     """
     초기 상태 생성
@@ -159,6 +161,7 @@ def create_initial_state(
         max_drawdown: 최대 낙폭 한도 (None이면 YAML에서 로드)
         trailing_stop: 트레일링 스탑 사용 여부 (None이면 YAML에서 로드)
         trailing_stop_pct: 트레일링 스탑 비율 (None이면 YAML에서 로드)
+        slippage: 슬리피지 (None이면 YAML에서 로드)
 
     Returns:
         초기화된 TradingState
@@ -178,6 +181,7 @@ def create_initial_state(
     final_trailing_stop = trailing_stop if trailing_stop is not None else config.get('risk', {}).get('trailing_stop', False)
     final_trailing_stop_pct = trailing_stop_pct if trailing_stop_pct is not None else config.get('risk', {}).get('trailing_stop_pct', 0.02)
     final_max_drawdown = max_drawdown if max_drawdown is not None else config.get('risk', {}).get('max_drawdown', -0.20)
+    final_slippage = slippage if slippage is not None else config.get('volatility_breakout', {}).get('slippage', 0.002)
 
     return TradingState(
         # 메타
@@ -205,6 +209,7 @@ def create_initial_state(
         take_profit_pct=final_take_profit_pct,
         trailing_stop=final_trailing_stop,
         trailing_stop_pct=final_trailing_stop_pct,
+        slippage=final_slippage,
 
         # 포지션
         position_status="IDLE",
