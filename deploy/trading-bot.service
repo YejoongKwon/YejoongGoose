@@ -1,0 +1,18 @@
+[Unit]
+Description=Trading Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=trading
+WorkingDirectory=/home/trading/trading_bot
+Environment=PYTHONPATH=/home/trading/trading_bot
+EnvironmentFile=/home/trading/trading_bot/config/.env
+ExecStart=/usr/bin/python3.11 apps/daily_breakout_app.py --mode demo --symbol 069500
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

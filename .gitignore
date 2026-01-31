@@ -1,5 +1,5 @@
 # Python
-__pycache__/
+*.__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -22,9 +22,8 @@ wheels/
 
 # Virtual Environment
 venv/
-ENV/
-env/
 .venv
+env/
 
 # IDE
 .vscode/
@@ -32,35 +31,33 @@ env/
 *.swp
 *.swo
 *~
+.ipynb_checkpoints/
 
-# Logs
-*.log
-data/logs/
-*.out
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment Variables
+config/.env
+.env.local
+
+# Config (sensitive information)
+config/local_*.yaml
+config/*.secret
+config/kis_devlp.yaml
+config/KIS*
 
 # Data
 data/trades/*.json
 data/trades/*.csv
 !data/trades/.gitkeep
 
-# Config (개인 정보 포함 가능)
-config/local_*.yaml
-config/*.secret
-config/kis_devlp.yaml
-config/KIS*
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Jupyter
-.ipynb_checkpoints/
+# Logs
+*.log
+*.out
+data/logs/
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Environment
-.env
-.env.local

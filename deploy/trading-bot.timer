@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Trading Bot daily at market open
+
+[Timer]
+# 월~금 09:00에 실행 (KST)
+OnCalendar=Mon..Fri 09:00:00
+# 시스템이 꺼져있다가 켜지면 놓친 실행 보상
+Persistent=true
+
+[Install]
+WantedBy=timers.target
