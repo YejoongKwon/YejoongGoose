@@ -1,0 +1,78 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # 배포 대상 디렉토리/파일만 트리거
+      - 'apps/**'
+      - 'lib/**'
+      - 'skills/**'
+      - 'config/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+  workflow_dispatch:  # 수동 실행 가능
+
+env:
+  AWS_REGION: ap-northeast-2
+  EC2_INSTANCE_ID: i-0e5ca4b649ce04158
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create deployment package
+        run: |
+          tar -czf deploy.tar.gz \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='venv' \
+            --exclude='.venv' \
+            --exclude='cdk/.venv' \
+            --exclude='cdk/cdk.out' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.pytest_cache' \
+            --exclude='data/logs/*' \
+            --exclude='config/.env' \
+            --exclude='config/KIS*' \
+            .
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp deploy.tar.gz s3://trading-bot-deploy-${{ secrets.AWS_ACCOUNT_ID }}/deploy.tar.gz
+
+      - name: Deploy to EC2 via SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "cd /home/trading/trading_bot",
+              "sudo -u trading aws s3 cp s3://trading-bot-deploy-${{ secrets.AWS_ACCOUNT_ID }}/deploy.tar.gz /tmp/deploy.tar.gz",
+              "sudo -u trading tar -xzf /tmp/deploy.tar.gz -C /home/trading/trading_bot",
+              "sudo -u trading pip3.11 install -r requirements.txt --quiet",
+              "sudo systemctl restart trading-web",
+              "sudo systemctl restart trading-bot.timer",
+              "rm /tmp/deploy.tar.gz",
+              "echo Deploy completed at $(date)"
+            ]' \
+            --output text \
+            --query "Command.CommandId"
+
+      - name: Wait for deployment
+        run: |
+          sleep 10
+          echo "Deployment initiated. Check EC2 logs for status."
